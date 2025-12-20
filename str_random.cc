@@ -12,8 +12,12 @@
 #include "charSet.hpp"                          // 引入默认字符集定义
 #include <openssl/rand.h>  // 引入 OpenSSL 随机数生成器
 
-const std::string VERSION = "2.0.0";
+const std::string VERSION = "2.1.0";
 const std::string DEFAULT_CHARSET = std::string(digit) + std::string(en);
+
+// 大小限制常量
+const size_t MAX_OUTPUT_SIZE = 10 * 1024 * 1024;  // 10 MB
+const size_t CHUNK_SIZE = 1024;                     // 1 KB
 
 // OpenSSL 密码学安全随机数生成器包装类
 class OpenSSLRandomGenerator
@@ -220,20 +224,89 @@ int main(int argc, char* argv[])
     // 初始化 OpenSSL 密码学安全随机数生成器
     OpenSSLRandomGenerator generator;
 
-    // 输出生成的字符串，支持每行多个字符串
-    for (int i = 0; i < count; ++i)
+    // 估算总输出大小
+    // 计算字符集中每个字符的平均字节数
+    size_t total_charset_bytes = 0;
+    for (const auto& ch : charset_vec)
     {
-        if (i > 0 && i % per_line == 0)
-        {
-            std::cout << "\n";
-        }
-        else if (i > 0)
-        {
-            std::cout << " ";
-        }
-        std::cout << generate_random_string(length, charset_vec, generator);
+        total_charset_bytes += ch.size();
     }
-    std::cout << "\n";
+    double avg_bytes_per_char = static_cast<double>(total_charset_bytes) / charset_vec.size();
+
+    // 估算每个随机字符串的字节数
+    size_t estimated_string_bytes = static_cast<size_t>(length * avg_bytes_per_char);
+
+    // 估算分隔符的字节数（空格或换行）
+    size_t separator_bytes = count - 1;  // count-1 个分隔符（空格）
+    separator_bytes += (count / per_line);  // 换行符数量
+
+    // 估算总输出大小
+    size_t estimated_total_size = estimated_string_bytes * count + separator_bytes;
+
+    // 检查是否超过 10 MB 限制
+    if (estimated_total_size > MAX_OUTPUT_SIZE)
+    {
+        std::cerr << "错误: 估算输出大小 (" << estimated_total_size << " 字节, 约 "
+                  << (estimated_total_size / 1024.0 / 1024.0) << " MB) 超过 10 MB 限制。\n";
+        std::cerr << "请减少字符串长度或数量。\n";
+        return 1;
+    }
+
+    // 输出生成的字符串
+    // 如果估算大小小于等于 1 KB，直接输出
+    if (estimated_total_size <= CHUNK_SIZE)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (i > 0 && i % per_line == 0)
+            {
+                std::cout << "\n";
+            }
+            else if (i > 0)
+            {
+                std::cout << " ";
+            }
+            std::cout << generate_random_string(length, charset_vec, generator);
+        }
+        std::cout << "\n";
+    }
+    else
+    {
+        // 大于 1 KB，使用分块输出
+        std::string buffer;
+        buffer.reserve(CHUNK_SIZE * 2);  // 预留缓冲区
+
+        for (int i = 0; i < count; ++i)
+        {
+            // 添加分隔符
+            if (i > 0 && i % per_line == 0)
+            {
+                buffer += "\n";
+            }
+            else if (i > 0)
+            {
+                buffer += " ";
+            }
+
+            // 生成并添加随机字符串
+            buffer += generate_random_string(length, charset_vec, generator);
+
+            // 如果缓冲区大于 1 KB，输出并清空
+            if (buffer.size() >= CHUNK_SIZE)
+            {
+                std::cout << buffer;
+                std::cout.flush();  // 立即刷新输出
+                buffer.clear();
+            }
+        }
+
+        // 输出剩余内容
+        if (!buffer.empty())
+        {
+            std::cout << buffer;
+        }
+        std::cout << "\n";
+    }
 
     return 0;
 }
