@@ -10,94 +10,41 @@
 
 #include "CLI11.hpp"                            // 引入 CLI11 库
 #include "charSet.hpp"                          // 引入默认字符集定义
-#include "pcg_random.hpp"  // 引入 PCG 随机数生成器
+#include <openssl/rand.h>  // 引入 OpenSSL 随机数生成器
 
-const std::string VERSION = "1.1.0";
+const std::string VERSION = "2.0.0";
 const std::string DEFAULT_CHARSET = std::string(digit) + std::string(en);
 
-// PCG 随机数生成器包装类，支持自动注入真随机数
-class AutoReseedPCG
+// OpenSSL 密码学安全随机数生成器包装类
+class OpenSSLRandomGenerator
 {
    public:
     using result_type = uint64_t;  // 定义结果类型，符合 C++ 随机数生成器要求
 
-   private:
-    pcg64 generator_;                 // PCG 64位随机数生成器
-    std::random_device true_random_;  // 真随机数源
-    size_t operations_count_;         // 操作计数器
-    size_t reseed_interval_;          // 重新播种间隔
+    // 构造函数
+    OpenSSLRandomGenerator() = default;
 
-    // 从真随机数源获取种子
-    uint64_t get_true_random_seed()
-    {
-        // 使用 random_device 生成 64 位种子
-        uint64_t seed = static_cast<uint64_t>(true_random_()) << 32 | true_random_();
-        return seed;
-    }
-
-    // 重新播种
-    void reseed()
-    {
-        uint64_t seed = get_true_random_seed();
-        uint64_t seq = get_true_random_seed();
-        generator_.seed(seed, seq);
-
-#ifdef DEBUG_RESEED
-        std::cerr << "[自动重新播种] 操作次数: " << operations_count_ << ", 新种子: " << seed
-                  << ", 序列: " << seq << std::endl;
-#endif
-    }
-
-   public:
-    // 构造函数：初始化 PCG 生成器，设置重新播种间隔
-    explicit AutoReseedPCG(size_t reseed_interval = 10000)
-        : operations_count_(0), reseed_interval_(reseed_interval)
-    {
-        // 初始播种
-        reseed();
-    }
-
-    // 生成随机数，自动检查是否需要重新播种
+    // 生成随机数
     template <typename T = uint64_t>
     T operator()()
     {
-        // 每次调用增加计数器
-        ++operations_count_;
-
-        // 检查是否需要重新播种
-        if (operations_count_ % reseed_interval_ == 0)
+        T value;
+        // 使用 OpenSSL 的 RAND_bytes 生成密码学安全的随机数
+        if (RAND_bytes(reinterpret_cast<unsigned char*>(&value), sizeof(T)) != 1)
         {
-            reseed();
+            throw std::runtime_error("OpenSSL RAND_bytes 生成随机数失败");
         }
-
-        // 返回随机数
-        if constexpr (std::is_same_v<T, uint32_t>)
-        {
-            return static_cast<uint32_t>(generator_());
-        }
-        else
-        {
-            return generator_();
-        }
+        return value;
     }
 
     // 获取最小值（用于 uniform_int_distribution）
-    static constexpr uint64_t min() { return pcg64::min(); }
+    static constexpr uint64_t min() { return 0; }
 
     // 获取最大值（用于 uniform_int_distribution）
-    static constexpr uint64_t max() { return pcg64::max(); }
-
-    // 手动触发重新播种
-    void force_reseed() { reseed(); }
-
-    // 设置重新播种间隔
-    void set_reseed_interval(size_t interval) { reseed_interval_ = interval; }
-
-    // 获取当前操作计数
-    size_t get_operations_count() const { return operations_count_; }
+    static constexpr uint64_t max() { return UINT64_MAX; }
 };
 
-// 新增函数：将 UTF-8 字符串拆分为单个字符（字符串向量）
+// 将 UTF-8 字符串拆分为单个字符（字符串向量）
 std::vector<std::string> split_utf8_string(const std::string_view& str)
 {
     std::vector<std::string> chars;
@@ -155,9 +102,9 @@ std::string load_charset_from_file(const std::string& filename)
 }
 
 // 函数：生成指定长度的随机字符串
-// 修改：使用 AutoReseedPCG 替代 std::mt19937
+// 使用 OpenSSL 密码学安全随机数生成器
 std::string generate_random_string(size_t length, const std::vector<std::string>& charset,
-                                   AutoReseedPCG& generator)
+                                   OpenSSLRandomGenerator& generator)
 {
     if (charset.empty())
     {
@@ -187,13 +134,12 @@ std::string generate_random_string(size_t length, const std::vector<std::string>
 // 主函数，处理命令行参数
 int main(int argc, char* argv[])
 {
-    CLI::App app{"随机字符串生成器 (使用 PCG 随机数生成器 + 自动真随机数注入)"};
+    CLI::App app{"随机字符串生成器 (使用 OpenSSL 密码学安全随机数生成器)"};
     app.set_version_flag("-v,--version", VERSION, "显示版本信息");
 
     size_t length = 16;
     int count = 1;
     int per_line = 1;
-    size_t reseed_interval = 10000;  // 默认每 10000 次操作重新播种
     std::vector<std::string> charset_sources;
 
     // 定义参数
@@ -209,10 +155,6 @@ int main(int argc, char* argv[])
 
     // 选项参数: -n/--per-line
     app.add_option("-n,--per-line", per_line, "每行输出的字符串数量")->default_val(1);
-
-    // 新增选项参数: -r/--reseed-interval
-    app.add_option("-r,--reseed-interval", reseed_interval, "自动重新播种间隔（操作次数）")
-        ->default_val(10000);
 
     CLI11_PARSE(app, argc, argv);
 
@@ -275,8 +217,8 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // 初始化 PCG 随机数引擎（带自动重新播种功能）
-    AutoReseedPCG generator(reseed_interval);
+    // 初始化 OpenSSL 密码学安全随机数生成器
+    OpenSSLRandomGenerator generator;
 
     // 输出生成的字符串，支持每行多个字符串
     for (int i = 0; i < count; ++i)

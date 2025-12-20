@@ -8,6 +8,7 @@ g++ -std=c++17 -O2 -Wall -Wextra \
     -Werror \
     -s \
     -I .\
+    -lssl -lcrypto \
     str_random.cc \
     -o out
 
