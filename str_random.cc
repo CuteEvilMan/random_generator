@@ -10,9 +10,10 @@
 
 #include "CLI11.hpp"                            // 引入 CLI11 库
 #include "charSet.hpp"                          // 引入默认字符集定义
-#include "pcg-cpp-0.98/include/pcg_random.hpp"  // 引入 PCG 随机数生成器
+#include "pcg_random.hpp"  // 引入 PCG 随机数生成器
 
-const std::string_view DEFAULT_CHARSET = en;
+const std::string VERSION = "1.1.0";
+const std::string DEFAULT_CHARSET = std::string(digit) + std::string(en);
 
 // PCG 随机数生成器包装类，支持自动注入真随机数
 class AutoReseedPCG
@@ -187,6 +188,7 @@ std::string generate_random_string(size_t length, const std::vector<std::string>
 int main(int argc, char* argv[])
 {
     CLI::App app{"随机字符串生成器 (使用 PCG 随机数生成器 + 自动真随机数注入)"};
+    app.set_version_flag("-v,--version", VERSION, "显示版本信息");
 
     size_t length = 16;
     int count = 1;
@@ -202,7 +204,7 @@ int main(int argc, char* argv[])
     app.add_option("count", count, "生成的字符串数量")->default_val(1);
 
     // 选项参数: -s/--set
-    app.add_option("-s,--set", charset_sources, "字符集来源 (en, zh, sp,或文件路径)")
+    app.add_option("-s,--set", charset_sources, "字符集来源 (dn, en, zh, sp,或文件路径)")
         ->expected(1, -1);  // 允许至少 1 个，最多不限
 
     // 选项参数: -n/--per-line
@@ -225,7 +227,11 @@ int main(int argc, char* argv[])
     {
         for (const auto& source : charset_sources)
         {
-            if (source == "en")
+            if (source == "dn")
+            {
+                final_charset_str += std::string(digit);
+            }
+            else if (source == "en")
             {
                 final_charset_str += std::string(en);
             }
