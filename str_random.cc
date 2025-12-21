@@ -1,5 +1,5 @@
 #include <algorithm>
-
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -12,7 +12,7 @@
 #include "charSet.hpp"                          // 引入默认字符集定义
 #include <openssl/rand.h>  // 引入 OpenSSL 随机数生成器
 
-const std::string VERSION = "2.1.0";
+const std::string VERSION = "2.2.0";
 const std::string DEFAULT_CHARSET = std::string(digit) + std::string(en);
 
 // 大小限制常量
@@ -144,6 +144,7 @@ int main(int argc, char* argv[])
     size_t length = 16;
     int count = 1;
     int per_line = 1;
+    int key_bits = 0;  // 等效密钥长度（比特数），0 表示未指定
     std::vector<std::string> charset_sources;
 
     // 定义参数
@@ -159,6 +160,10 @@ int main(int argc, char* argv[])
 
     // 选项参数: -n/--per-line
     app.add_option("-n,--per-line", per_line, "每行输出的字符串数量")->default_val(1);
+
+    // 选项参数: -k/--key-bits
+    app.add_option("-k,--key-bits", key_bits, "等效密钥长度（比特数），根据字符集熵自动计算字符串长度")
+        ->default_val(0);
 
     CLI11_PARSE(app, argc, argv);
 
@@ -219,6 +224,24 @@ int main(int argc, char* argv[])
     {
         std::cerr << "错误: 有效字符集为空。\n";
         return 1;
+    }
+
+    // 如果指定了等效密钥长度，根据字符集熵计算所需字符串长度
+    if (key_bits > 0)
+    {
+        // 计算字符集的熵（每个字符提供的比特数）
+        double entropy_per_char = std::log2(static_cast<double>(charset_vec.size()));
+        
+        // 计算需要的字符数以达到指定的密钥强度
+        length = static_cast<size_t>(std::ceil(key_bits / entropy_per_char));
+        
+        // 输出信息
+        std::cerr << "字符集大小: " << charset_vec.size() << " 个字符\n";
+        std::cerr << "每字符熵: " << entropy_per_char << " 比特\n";
+        std::cerr << "目标密钥强度: " << key_bits << " 比特\n";
+        std::cerr << "计算得到的字符串长度: " << length << " 个字符\n";
+        std::cerr << "实际密钥强度: " << (length * entropy_per_char) << " 比特\n";
+        std::cerr << "---\n";
     }
 
     // 初始化 OpenSSL 密码学安全随机数生成器
