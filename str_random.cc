@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cerrno>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -8,44 +10,112 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "Bcrypt.lib")
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/random.h>
+#endif
+
 #include "CLI11.hpp"                            // 引入 CLI11 库
 #include "charSet.hpp"                          // 引入默认字符集定义
-#include <openssl/rand.h>  // 引入 OpenSSL 随机数生成器
 
-const std::string VERSION = "2.2.0";
+const std::string VERSION = "3.2.0";
 const std::string DEFAULT_CHARSET = std::string(digit) + std::string(en);
 
 // 大小限制常量
 const size_t MAX_OUTPUT_SIZE = 10 * 1024 * 1024;  // 10 MB
 const size_t CHUNK_SIZE = 1024;                     // 1 KB
 
-// OpenSSL 密码学安全随机数生成器包装类
-class OpenSSLRandomGenerator
+// 使用系统调用获取密码学安全的随机数（Linux: getrandom/urandom；Windows: BCryptGenRandom）
+class SystemRandomGenerator
 {
    public:
-    using result_type = uint64_t;  // 定义结果类型，符合 C++ 随机数生成器要求
+    using result_type = uint64_t;
 
-    // 构造函数
-    OpenSSLRandomGenerator() = default;
+    SystemRandomGenerator() = default;
 
-    // 生成随机数
     template <typename T = uint64_t>
     T operator()()
     {
-        T value;
-        // 使用 OpenSSL 的 RAND_bytes 生成密码学安全的随机数
-        if (RAND_bytes(reinterpret_cast<unsigned char*>(&value), sizeof(T)) != 1)
-        {
-            throw std::runtime_error("OpenSSL RAND_bytes 生成随机数失败");
-        }
+        T value{};
+        fill_random_bytes(reinterpret_cast<unsigned char*>(&value), sizeof(T));
         return value;
     }
 
-    // 获取最小值（用于 uniform_int_distribution）
     static constexpr uint64_t min() { return 0; }
-
-    // 获取最大值（用于 uniform_int_distribution）
     static constexpr uint64_t max() { return UINT64_MAX; }
+
+   private:
+    // 先尝试 getrandom；若内核不支持则回落到 /dev/urandom；Windows 使用 BCryptGenRandom
+    static void fill_random_bytes(unsigned char* buffer, size_t size)
+    {
+    #ifdef _WIN32
+            NTSTATUS status = BCryptGenRandom(nullptr, buffer, static_cast<ULONG>(size),
+                                              BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+            if (status != STATUS_SUCCESS)
+            {
+                throw std::runtime_error("BCryptGenRandom 失败");
+            }
+    #else
+        size_t filled = 0;
+        while (filled < size)
+        {
+            ssize_t ret = getrandom(buffer + filled, size - filled, GRND_NONBLOCK);
+            if (ret < 0)
+            {
+                if (errno == EINTR)
+                {
+                    continue;  // 被信号中断，重试
+                }
+                if (errno == ENOSYS)
+                {
+                    fill_from_urandom(buffer + filled, size - filled);
+                    return;
+                }
+                throw std::runtime_error("getrandom 失败: " + std::string(std::strerror(errno)));
+            }
+            filled += static_cast<size_t>(ret);
+        }
+#endif
+    }
+
+#ifndef _WIN32
+    static void fill_from_urandom(unsigned char* buffer, size_t size)
+    {
+        int fd = open("/dev/urandom", O_RDONLY);
+        if (fd < 0)
+        {
+            throw std::runtime_error("无法打开 /dev/urandom: " + std::string(std::strerror(errno)));
+        }
+
+        size_t read_bytes = 0;
+        while (read_bytes < size)
+        {
+            ssize_t ret = read(fd, buffer + read_bytes, size - read_bytes);
+            if (ret < 0)
+            {
+                if (errno == EINTR)
+                {
+                    continue;  // 被信号中断，重试
+                }
+                close(fd);
+                throw std::runtime_error("读取 /dev/urandom 失败: " + std::string(std::strerror(errno)));
+            }
+            if (ret == 0)
+            {
+                close(fd);
+                throw std::runtime_error("读取 /dev/urandom 意外返回 0 字节");
+            }
+            read_bytes += static_cast<size_t>(ret);
+        }
+
+        close(fd);
+    }
+#endif
 };
 
 // 将 UTF-8 字符串拆分为单个字符（字符串向量）
@@ -105,10 +175,9 @@ std::string load_charset_from_file(const std::string& filename)
     return charset;
 }
 
-// 函数：生成指定长度的随机字符串
-// 使用 OpenSSL 密码学安全随机数生成器
+// 函数：生成指定长度的随机字符串，使用系统调用的密码学安全随机数生成器
 std::string generate_random_string(size_t length, const std::vector<std::string>& charset,
-                                   OpenSSLRandomGenerator& generator)
+                                   SystemRandomGenerator& generator)
 {
     if (charset.empty())
     {
@@ -138,14 +207,16 @@ std::string generate_random_string(size_t length, const std::vector<std::string>
 // 主函数，处理命令行参数
 int main(int argc, char* argv[])
 {
-    CLI::App app{"随机字符串生成器 (使用 OpenSSL 密码学安全随机数生成器)"};
+    CLI::App app{"随机字符串生成器 (使用系统调用的密码学安全随机数)"};
     app.set_version_flag("-v,--version", VERSION, "显示版本信息");
 
     size_t length = 16;
     int count = 1;
     int per_line = 1;
     int key_bits = 0;  // 等效密钥长度（比特数），0 表示未指定
+    std::string charset_literal;
     std::vector<std::string> charset_sources;
+    bool show_charset = false;
 
     // 定义参数
     // 位置参数 1: 长度
@@ -157,6 +228,12 @@ int main(int argc, char* argv[])
     // 选项参数: -s/--set
     app.add_option("-s,--set", charset_sources, "字符集来源 (dn, en, zh, sp,或文件路径)")
         ->expected(1, -1);  // 允许至少 1 个，最多不限
+
+    // 选项参数: -c/--charset
+    app.add_option("-c,--charset", charset_literal, "直接提供字符集字符串（可与 -s 组合）");
+
+    // 选项参数: --show-charset
+    app.add_flag("--show-charset", show_charset, "输出最终字符集后再生成字符串");
 
     // 选项参数: -n/--per-line
     app.add_option("-n,--per-line", per_line, "每行输出的字符串数量")->default_val(1);
@@ -170,12 +247,17 @@ int main(int argc, char* argv[])
     // 逻辑处理：构建最终的字符集字符串
     std::string final_charset_str{};
 
-    if (charset_sources.empty())
+    if (charset_sources.empty() && charset_literal.empty())
     {
         final_charset_str = std::string(DEFAULT_CHARSET);
     }
     else
     {
+        if (!charset_literal.empty())
+        {
+            final_charset_str += charset_literal;
+        }
+
         for (const auto& source : charset_sources)
         {
             if (source == "dn")
@@ -226,6 +308,16 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    if (show_charset)
+    {
+        std::cerr << "字符集(" << charset_vec.size() << "): ";
+        for (const auto& ch : charset_vec)
+        {
+            std::cerr << ch;
+        }
+        std::cerr << "\n";
+    }
+
     // 如果指定了等效密钥长度，根据字符集熵计算所需字符串长度
     if (key_bits > 0)
     {
@@ -244,8 +336,8 @@ int main(int argc, char* argv[])
         std::cerr << "---\n";
     }
 
-    // 初始化 OpenSSL 密码学安全随机数生成器
-    OpenSSLRandomGenerator generator;
+    // 初始化系统调用的密码学安全随机数生成器
+    SystemRandomGenerator generator;
 
     // 估算总输出大小
     // 计算字符集中每个字符的平均字节数

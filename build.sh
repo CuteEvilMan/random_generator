@@ -1,23 +1,17 @@
-#!/bin/bash
-
-# 编译脚本 - 使用 PCG 随机数生成器的随机字符串生成器
+#!/usr/bin/env bash
+set -euo pipefail
 
 echo "正在编译 str_random.cc ..."
 
-g++ -std=c++17 -O2 -Wall -Wextra \
-    -Werror \
-    -s \
-    -I .\
-    -lssl -lcrypto \
-    str_random.cc \
-    -o out
+UNAME=$(uname -s || echo unknown)
+LDFLAGS=""
 
-# 检查编译是否成功
-if [ $? -eq 0 ]; then
-    echo "✓ 编译成功！可执行文件: out"
-    
-    
-else
-    echo "✗ 编译失败！"
-    exit 1
+# Windows(MinGW/MSYS) 需要链接 bcrypt
+if echo "$UNAME" | grep -qiE "mingw|msys|cygwin"; then
+    LDFLAGS+=" -lbcrypt"
 fi
+
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -s -I . \
+    str_random.cc -o out $LDFLAGS
+
+echo "✓ 编译成功！可执行文件: out"
