@@ -1,9 +1,9 @@
 #include <string>
 #ifndef CHARSET_HPP
 #define CHARSET_HPP
-constexpr std::string_view digit = "0123456789";
+constexpr std::string_view digit_nw = "0123456789";
 
-constexpr std::string_view en =
+constexpr std::string_view en_nw =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz";
 
