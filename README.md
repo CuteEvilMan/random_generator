@@ -8,7 +8,7 @@
 - 支持字符集选项：`dn`(数字)、`en`(英文)、`zh`(常用汉字)、`sp`(特殊符号)、自定义文件路径、直接输入字符串
 - 支持每行输出多个字符串，便于批量生成
 - 可选输出最终字符集，便于调试
-- 版本：3.3.0
+- 版本：3.3.1
 
 ## 依赖
 - C++17 编译器（示例使用 `g++`）
@@ -17,14 +17,14 @@
 
 ## 构建
 ```bash
-./build.sh
+./build.sh  #bash
+./build.ps1 #powershell
 ```
 生成可执行文件 `out`。如果需要手动编译：
 ```bash
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -s -I . \
   str_random.cc -o out
 ```
-Windows 可使用 [build_windows.bat](build_windows.bat)，会优先尝试 MSVC，其次 MinGW。
 
 ## 用法示例
 - 生成 16 位字符串（默认字符集），输出 1 个：

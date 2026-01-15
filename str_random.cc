@@ -28,8 +28,9 @@
 #include "CLI11.hpp"                            // 引入 CLI11 库
 #include "charSet.hpp"                          // 引入默认字符集定义
 
-const std::string VERSION = "3.3.0";
-const std::string DEFAULT_CHARSET_nw = std::string(digit_nw) + std::string(en_nw);
+const std::string VERSION = "3.3.1";
+const std::string DEFAULT_CHARSET_nw = std::string(digit_nw/*win11中有这个变量名 _nw表示no=window */)
+ + std::string(en_nw/*win11中有这个变量名 _nw表示no=window */);
 
 // 大小限制常量
 const size_t MAX_OUTPUT_SIZE = 10 * 1024 * 1024;  // 10 MB

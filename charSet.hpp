@@ -1,9 +1,9 @@
 #include <string>
 #ifndef CHARSET_HPP
 #define CHARSET_HPP
-constexpr std::string_view digit_nw = "0123456789";
+constexpr std::string_view digit_nw /*win11中有这个变量名 _nw表示no=window */= "0123456789"; 
 
-constexpr std::string_view en_nw =
+constexpr std::string_view en_nw/*win11中有这个变量名 _nw表示no=window */ =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz";
 
