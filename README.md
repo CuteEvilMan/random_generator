@@ -8,18 +8,29 @@
 - 支持字符集选项：`dn`(数字)、`en`(英文)、`zh`(常用汉字)、`sp`(特殊符号)、自定义文件路径、直接输入字符串
 - 支持每行输出多个字符串，便于批量生成
 - 可选输出最终字符集，便于调试
-- 版本：3.3.1
+- 版本：3.3.2
 
 ## 依赖
 - C++17 编译器（示例使用 `g++`）
 - Linux: 无额外依赖；Windows: 依赖系统自带的 bcrypt（`bcrypt.lib`）
-- [CLI11.hpp v2.6.1](https://github.com/CLIUtils/CLI11/releases/download/v2.6.1/CLI11.hpp) 放到仓库根目录
+- [CLI11.hpp v2.6.2](https://github.com/CLIUtils/CLI11/releases/download/v2.6.2/CLI11.hpp) 放到仓库根目录
 
 ## 构建
+
+推荐使用 Makefile（需已安装 make）：
+
+```bash
+make
+
+得到输出文件 out
+
+或使用脚本
+
 ```bash
 ./build.sh  #bash
 ./build.ps1 #powershell
-```
+``
+`
 生成可执行文件 `out`。如果需要手动编译：
 ```bash
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -s -I . \
