@@ -11,11 +11,19 @@
 #include <vector>
 
 #ifdef _WIN32
-// clang-format off
+// 以下行的作用是
+#ifndef WINAPI 
 #include <windows.h>
+#else 
 #include <bcrypt.h>
-// clang-format on
-
+#endif
+// 这两部分都有用
+#ifndef WINAPI 
+#include <windows.h>
+#else 
+#include <bcrypt.h>
+#endif
+// 保证bcrypt.h 在windows .h后被引入
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 #endif
@@ -31,7 +39,7 @@
 #include "CLI11.hpp"   // 引入 CLI11 库
 #include "charSet.hpp" // 引入默认字符集定义
 
-const std::string VERSION = "3.3.2";
+const std::string VERSION = "3.3.3";
 const std::string DEFAULT_CHARSET_nw =
     std::string(digit_nw /*win11中有这个变量名 _nw表示no=window */) +
     std::string(en_nw /*win11中有这个变量名 _nw表示no=window */);
